@@ -1,7 +1,9 @@
 export type TxType = "expense" | "income";
+export type PaidFrom = "shared" | "personal";
 
 export type TxCategory =
   | "groceries"
+  | "dining"
   | "transport"
   | "leisure"
   | "bills"
@@ -43,5 +45,7 @@ export type Transaction = {
   description: string;
   occurred_on: string;
   recurring_template_id: string | null;
+  paid_from: PaidFrom;
+  paid_by: string | null;
   created_at: string;
 };

@@ -1,5 +1,9 @@
 import type { Transaction } from "../types";
 
+export function isPersonalExpense(t: Transaction): boolean {
+  return t.type === "expense" && t.paid_from === "personal";
+}
+
 export function computeCushion(
   openingBalance: number | null | undefined,
   openingSetAt: string | null | undefined,
@@ -10,7 +14,12 @@ export function computeCushion(
   let delta = 0;
   for (const t of transactions) {
     if (new Date(t.created_at).getTime() <= since) continue;
-    delta += t.type === "income" ? Number(t.amount) : -Number(t.amount);
+    if (t.type === "income") {
+      delta += Number(t.amount);
+      continue;
+    }
+    if (isPersonalExpense(t)) continue;
+    delta -= Number(t.amount);
   }
   return Number(openingBalance) + delta;
 }

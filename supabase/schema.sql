@@ -28,6 +28,7 @@ begin
   if not exists (select 1 from pg_type where typname = 'tx_category') then
     create type public.tx_category as enum (
       'groceries',
+      'dining',
       'transport',
       'leisure',
       'bills',
@@ -39,6 +40,7 @@ begin
 end $$;
 
 alter type public.tx_category add value if not exists 'gift';
+alter type public.tx_category add value if not exists 'dining';
 
 create table if not exists public.recurring_templates (
   id uuid primary key default gen_random_uuid(),
@@ -61,6 +63,8 @@ create table if not exists public.transactions (
   description text not null,
   occurred_on date not null default current_date,
   recurring_template_id uuid references public.recurring_templates on delete set null,
+  paid_from text not null default 'shared' check (paid_from in ('shared', 'personal')),
+  paid_by uuid references auth.users on delete set null,
   created_at timestamptz not null default now()
 );
 

@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { useSession } from "../session";
 import { categoryLabel } from "../lib/categories";
+import { isPersonalExpense } from "../lib/cushion";
 import { formatMoney } from "../lib/format";
+import type { Profile, Transaction } from "../types";
 
 export function HistoryScreen() {
-  const { transactions, deleteTransaction } = useSession();
+  const { transactions, deleteTransaction, members } = useSession();
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -12,10 +14,10 @@ export function HistoryScreen() {
     const needle = q.trim();
     return transactions.filter((t) => {
       if (!needle) return true;
-      const hay = `${t.description} ${categoryLabel(t.category)} ${t.amount}`;
+      const hay = `${t.description} ${categoryLabel(t.category)} ${t.amount} ${payerLabel(t, members)}`;
       return hay.includes(needle);
     });
-  }, [q, transactions]);
+  }, [q, transactions, members]);
 
   async function onDelete(id: string) {
     if (!window.confirm("למחוק את הרשומה?")) return;
@@ -47,6 +49,7 @@ export function HistoryScreen() {
               <p className="text-xs text-stone-500">
                 {categoryLabel(t.category)} · {t.occurred_on.split("-").reverse().join(".")}
                 {t.recurring_template_id ? " · קבוע" : ""}
+                {payerLabel(t, members)}
               </p>
             </div>
             <p className={`shrink-0 font-bold tabular-nums ${t.type === "income" ? "text-accent" : "text-ink"}`}>
@@ -66,4 +69,11 @@ export function HistoryScreen() {
       </ul>
     </div>
   );
+}
+
+function payerLabel(t: Transaction, members: Profile[]): string {
+  if (t.type !== "expense") return "";
+  if (!isPersonalExpense(t)) return " · קופה";
+  const name = members.find((m) => m.id === t.paid_by)?.display_name;
+  return name ? ` · אישי · ${name}` : " · אישי";
 }

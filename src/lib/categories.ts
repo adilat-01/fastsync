@@ -1,7 +1,8 @@
 import type { TxCategory } from "../types";
 
 export const EXPENSE_CATEGORIES: { id: TxCategory; label: string; color: string }[] = [
-  { id: "groceries", label: "מזון וסופר", color: "#0f766e" },
+  { id: "groceries", label: "סופר", color: "#0f766e" },
+  { id: "dining", label: "מסעדות / וולט", color: "#b45309" },
   { id: "transport", label: "תחבורה", color: "#1d4ed8" },
   { id: "leisure", label: "פנאי", color: "#7c3aed" },
   { id: "bills", label: "חשבונות", color: "#c2410c" },

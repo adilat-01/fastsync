@@ -10,7 +10,7 @@ import {
   previousMonthKey,
   shiftMonth,
 } from "../lib/format";
-import { computeCushion } from "../lib/cushion";
+import { computeCushion, isPersonalExpense } from "../lib/cushion";
 import type { TxCategory } from "../types";
 
 export function DashboardScreen() {
@@ -30,8 +30,11 @@ export function DashboardScreen() {
   );
 
   const income = sumBy(currentTx, "income");
-  const expense = sumBy(currentTx, "expense");
-  const remaining = income - expense;
+  const sharedExpense = currentTx
+    .filter((t) => t.type === "expense" && !isPersonalExpense(t))
+    .reduce((s, t) => s + Number(t.amount), 0);
+  const personalExpense = currentTx.filter(isPersonalExpense).reduce((s, t) => s + Number(t.amount), 0);
+  const remaining = income - sharedExpense;
   const cushion = computeCushion(household?.opening_balance, household?.opening_set_at, transactions);
 
   const slices = EXPENSE_CATEGORIES.map((cat) => ({
@@ -69,19 +72,24 @@ export function DashboardScreen() {
             {formatMoney(cushion)}
           </p>
           <p className="mt-1 text-xs text-stone-400">
-            מה שיש בחשבון עכשיו. מה שנשאר בסוף החודש נשאר כאן; חריגה יורדת מהכרית.
+            מה שיש בחשבון המשותף עכשיו. הכנסות (כולל חד-פעמיות) מעלות; הוצאות מהקופה מורידות.
+            הוצאה מחשבון אישי נשמרת בפילוח ולא יורדת מכאן.
           </p>
         </section>
       )}
 
       <section className="mt-5 grid grid-cols-3 gap-2">
         <Stat label="הכנסות" value={formatMoney(income)} />
-        <Stat label="הוצאות" value={formatMoney(expense)} />
+        <Stat label="מהקופה" value={formatMoney(sharedExpense)} />
         <Stat label="יתרה" value={formatMoney(remaining)} emph={remaining < 0 ? "bad" : "good"} />
       </section>
 
       <section className="card mt-5 p-4">
-        <h2 className="mb-3 text-sm font-bold text-ink">לאן הלך הכסף</h2>
+        <h2 className="mb-1 text-sm font-bold text-ink">לאן הלך הכסף</h2>
+        <p className="mb-3 text-xs text-stone-500">
+          כולל הוצאות מחשבון אישי (למשל דלק) — הן לא יורדות מהקופה.
+          {personalExpense > 0 ? ` אישי החודש: ${formatMoney(personalExpense)}.` : ""}
+        </p>
         <DonutChart slices={slices} />
       </section>
 

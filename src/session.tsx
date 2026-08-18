@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
-import type { Household, Profile, RecurringTemplate, Transaction, TxCategory, TxType } from "./types";
+import type { Household, Profile, RecurringTemplate, Transaction, TxCategory, TxType, PaidFrom } from "./types";
 import { monthKey, parseMonthKey, todayISO } from "./lib/format";
 
 type SessionValue = {
@@ -33,6 +33,8 @@ type SessionValue = {
     category: TxCategory;
     description: string;
     occurred_on?: string;
+    paid_from?: PaidFrom;
+    paid_by?: string | null;
   }) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   addTemplate: (input: {
@@ -151,6 +153,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         description: template.description,
         occurred_on: thisMonth.start,
         recurring_template_id: template.id,
+        paid_from: "shared",
+        paid_by: null,
       });
       if (insertError && insertError.code !== "23505") throw insertError;
     },
@@ -282,6 +286,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           category: input.category,
           description: input.description.trim() || (input.type === "income" ? "הכנסה" : "הוצאה"),
           occurred_on: input.occurred_on ?? todayISO(),
+          paid_from: input.type === "income" ? "shared" : (input.paid_from ?? "shared"),
+          paid_by: input.type === "income" || input.paid_from !== "personal" ? null : (input.paid_by ?? user.id),
         });
         if (insertError) throw insertError;
         await loadHouseholdData(user.id);

@@ -1,16 +1,18 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useSession } from "../session";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "../lib/categories";
-import { computeCushion } from "../lib/cushion";
+import { computeCushion, isPersonalExpense } from "../lib/cushion";
 import { formatMoney, monthKey, parseMonthKey, todayISO } from "../lib/format";
 import type { TxCategory, TxType } from "../types";
 
 export function QuickAddScreen() {
-  const { addTransaction, transactions, household } = useSession();
+  const { addTransaction, transactions, household, members, user } = useSession();
   const [kind, setKind] = useState<TxType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<TxCategory>("groceries");
+  const [paidFrom, setPaidFrom] = useState<"shared" | "personal">("shared");
+  const [paidBy, setPaidBy] = useState<string>("");
   const [date, setDate] = useState(todayISO());
   const [showDate, setShowDate] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -22,8 +24,11 @@ export function QuickAddScreen() {
     [month.end, month.start, transactions],
   );
   const income = monthTx.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
-  const expense = monthTx.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
-  const remaining = income - expense;
+  const sharedExpense = monthTx
+    .filter((t) => t.type === "expense" && !isPersonalExpense(t))
+    .reduce((s, t) => s + Number(t.amount), 0);
+  const personalExpense = monthTx.filter(isPersonalExpense).reduce((s, t) => s + Number(t.amount), 0);
+  const remaining = income - sharedExpense;
   const cushion = computeCushion(household?.opening_balance, household?.opening_set_at, transactions);
 
   const suggestions = useMemo(() => {
@@ -43,6 +48,7 @@ export function QuickAddScreen() {
   function switchKind(next: TxType) {
     setKind(next);
     setCategory(next === "income" ? "gift" : "groceries");
+    setPaidFrom("shared");
   }
 
   async function onSubmit(e: FormEvent) {
@@ -57,10 +63,13 @@ export function QuickAddScreen() {
         category,
         description: description.trim() || (kind === "income" ? "הכנסה" : "הוצאה"),
         occurred_on: date,
+        paid_from: kind === "expense" ? paidFrom : "shared",
+        paid_by: kind === "expense" && paidFrom === "personal" ? paidBy || user?.id || null : null,
       });
       setAmount("");
       setDescription("");
       setDate(todayISO());
+      setPaidFrom("shared");
       setFlash("נשמר");
       window.setTimeout(() => setFlash(null), 1400);
     } catch (err) {
@@ -82,9 +91,10 @@ export function QuickAddScreen() {
               {formatMoney(remaining)}
             </p>
             <p className="mt-2 text-xs text-stone-400">
-              הכנסות {formatMoney(income)} · הוצאות {formatMoney(expense)}
+              הכנסות {formatMoney(income)} · מהקופה {formatMoney(sharedExpense)}
+              {personalExpense > 0 ? ` · אישי ${formatMoney(personalExpense)}` : ""}
             </p>
-            <p className="mt-2 text-xs text-stone-500">אפשר להגדיר יתרת עו״ש במסך בית — זו כרית החיסכון.</p>
+            <p className="mt-2 text-xs text-stone-500">אפשר להגדיר יתרת עו״ש במסך הגדרות — פעם אחת, ואז זה מתעדכן לבד.</p>
           </>
         ) : (
           <>
@@ -93,7 +103,9 @@ export function QuickAddScreen() {
               {formatMoney(cushion)}
             </p>
             <p className="mt-2 text-xs text-stone-400">
-              החודש: נותרו {formatMoney(remaining)} · הכנסות {formatMoney(income)} · הוצאות {formatMoney(expense)}
+              החודש בקופה: נותרו {formatMoney(remaining)} · הכנסות {formatMoney(income)} · מהקופה{" "}
+              {formatMoney(sharedExpense)}
+              {personalExpense > 0 ? ` · אישי ${formatMoney(personalExpense)}` : ""}
             </p>
           </>
         )}
@@ -158,6 +170,57 @@ export function QuickAddScreen() {
             <option value={s} key={s} />
           ))}
         </datalist>
+
+        {kind === "expense" && (
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-medium text-stone-500">מאיפה שולם</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={`chip ${paidFrom === "shared" ? "chip-on" : ""}`}
+                onClick={() => setPaidFrom("shared")}
+              >
+                קופה משותפת
+              </button>
+              <button
+                type="button"
+                className={`chip ${paidFrom === "personal" ? "chip-on" : ""}`}
+                onClick={() => {
+                  setPaidFrom("personal");
+                  setPaidBy((prev) => prev || user?.id || members[0]?.id || "");
+                }}
+              >
+                חשבון אישי
+              </button>
+            </div>
+            {paidFrom === "personal" && (
+              <div className="mt-3">
+                <p className="mb-2 text-xs font-medium text-stone-500">מי שילם</p>
+                <div className="flex flex-wrap gap-2">
+                  {members.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`chip ${paidBy === m.id ? "chip-on" : ""}`}
+                      onClick={() => setPaidBy(m.id)}
+                    >
+                      {m.display_name || "שותף"}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-stone-500">
+                  נשמר בפילוח (למשל כמה דלק החודש) ולא יורד מיתרת העו״ש המשותפת.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {kind === "income" && (
+          <p className="mt-3 text-xs leading-relaxed text-stone-500">
+            הכנסה חד-פעמית נכנסת לקופה המשותפת אוטומטית. אין צורך לעדכן ידנית את יתרת העו״ש.
+          </p>
+        )}
 
         <button className="mt-3 text-sm text-stone-500" type="button" onClick={() => setShowDate((v) => !v)}>
           {showDate ? "הסתר תאריך" : `תאריך: ${date.split("-").reverse().join(".")}`}
