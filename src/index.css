@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-paper text-ink antialiased;
+  }
+
+  body {
+    @apply min-h-dvh bg-paper font-sans;
+  }
+
+  input,
+  button,
+  textarea {
+    @apply font-sans;
+  }
+
+  input[type="date"],
+  input[type="email"],
+  input[type="password"] {
+    direction: ltr;
+    text-align: right;
+  }
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-[16px] text-ink outline-none transition placeholder:text-stone-400 focus:border-accent;
+  }
+
+  .btn-primary {
+    @apply rounded-2xl bg-accent px-4 py-3.5 text-base font-bold text-white transition active:scale-[0.99] disabled:opacity-50;
+  }
+
+  .btn-ghost {
+    @apply rounded-2xl border border-stone-300 bg-white px-4 py-3.5 text-base font-semibold text-ink;
+  }
+
+  .card {
+    @apply rounded-2xl border border-stone-200/80 bg-white shadow-card;
+  }
+
+  .chip {
+    @apply rounded-full border border-stone-200 bg-white px-3 py-1.5 text-sm text-stone-600;
+  }
+
+  .chip-on {
+    @apply border-accent bg-teal-50 font-semibold text-accent;
+  }
+
+  .nav-arrow {
+    @apply grid h-10 w-10 place-items-center rounded-full bg-white text-xl text-stone-500;
+  }
+}
