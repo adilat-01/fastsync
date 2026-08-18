@@ -10,7 +10,7 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import type { Household, Profile, RecurringTemplate, Transaction, TxCategory, TxType } from "./types";
-import { todayISO } from "./lib/format";
+import { monthKey, parseMonthKey, todayISO } from "./lib/format";
 
 type SessionValue = {
   ready: boolean;
@@ -43,6 +43,7 @@ type SessionValue = {
   }) => Promise<void>;
   toggleTemplate: (id: string, active: boolean) => Promise<void>;
   deleteTemplate: (id: string) => Promise<void>;
+  setOpeningBalance: (amount: number) => Promise<void>;
 };
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -90,7 +91,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const [houseRes, memberRes, txRes, tmplRes] = await Promise.all([
       supabase
         .from("households")
-        .select("id, name, invite_code")
+        .select("id, name, invite_code, opening_balance, opening_set_at")
         .eq("id", profileRow.household_id)
         .single(),
       supabase
@@ -120,6 +121,41 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setTransactions((txRes.data ?? []) as Transaction[]);
     setTemplates((tmplRes.data ?? []) as RecurringTemplate[]);
   }, []);
+
+  const thisMonth = parseMonthKey(monthKey(new Date()));
+
+  const removePostedThisMonth = useCallback(async (templateId: string) => {
+    if (!supabase) return;
+    const { error: deleteError } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("recurring_template_id", templateId)
+      .gte("occurred_on", thisMonth.start)
+      .lte("occurred_on", thisMonth.end);
+    if (deleteError) throw deleteError;
+  }, [thisMonth.end, thisMonth.start]);
+
+  const postTemplateThisMonth = useCallback(
+    async (
+      template: Pick<RecurringTemplate, "id" | "type" | "amount" | "category" | "description">,
+      householdId: string,
+      userId: string,
+    ) => {
+      if (!supabase) return;
+      const { error: insertError } = await supabase.from("transactions").insert({
+        household_id: householdId,
+        created_by: userId,
+        type: template.type,
+        amount: template.amount,
+        category: template.category,
+        description: template.description,
+        occurred_on: thisMonth.start,
+        recurring_template_id: template.id,
+      });
+      if (insertError && insertError.code !== "23505") throw insertError;
+    },
+    [thisMonth.start],
+  );
 
   const refresh = useCallback(async () => {
     if (!supabase || !user) return;
@@ -244,7 +280,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           type: input.type,
           amount: input.amount,
           category: input.category,
-          description: input.description.trim() || "הוצאה",
+          description: input.description.trim() || (input.type === "income" ? "הכנסה" : "הוצאה"),
           occurred_on: input.occurred_on ?? todayISO(),
         });
         if (insertError) throw insertError;
@@ -258,34 +294,58 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       addTemplate: async (input) => {
         if (!supabase || !household || !user) throw new Error("אין משק בית פעיל");
-        const { error: insertError } = await supabase.from("recurring_templates").insert({
-          household_id: household.id,
-          type: input.type,
-          amount: input.amount,
-          category: input.category,
-          description: input.description.trim(),
-          active: true,
-        });
+        const { data: created, error: insertError } = await supabase
+          .from("recurring_templates")
+          .insert({
+            household_id: household.id,
+            type: input.type,
+            amount: input.amount,
+            category: input.category,
+            description: input.description.trim(),
+            active: true,
+          })
+          .select("id, type, amount, category, description")
+          .single();
         if (insertError) throw insertError;
+        if (created) await postTemplateThisMonth(created, household.id, user.id);
         await loadHouseholdData(user.id);
       },
       toggleTemplate: async (id, active) => {
-        if (!supabase || !user) return;
+        if (!supabase || !household || !user) return;
         const { error: updateError } = await supabase
           .from("recurring_templates")
           .update({ active })
           .eq("id", id);
         if (updateError) throw updateError;
+        if (!active) {
+          await removePostedThisMonth(id);
+        } else {
+          const current = templates.find((t) => t.id === id);
+          if (current) await postTemplateThisMonth(current, household.id, user.id);
+        }
         await loadHouseholdData(user.id);
       },
       deleteTemplate: async (id) => {
         if (!supabase || !user) return;
+        await removePostedThisMonth(id);
         const { error: deleteError } = await supabase.from("recurring_templates").delete().eq("id", id);
         if (deleteError) throw deleteError;
         await loadHouseholdData(user.id);
       },
+      setOpeningBalance: async (amount) => {
+        if (!supabase || !household || !user) throw new Error("אין משק בית פעיל");
+        const { error: updateError } = await supabase
+          .from("households")
+          .update({
+            opening_balance: amount,
+            opening_set_at: new Date().toISOString(),
+          })
+          .eq("id", household.id);
+        if (updateError) throw updateError;
+        await loadHouseholdData(user.id);
+      },
     }),
-    [error, household, loadHouseholdData, members, profile, ready, refresh, templates, transactions, user],
+    [error, household, loadHouseholdData, members, postTemplateThisMonth, profile, ready, refresh, removePostedThisMonth, templates, transactions, user],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

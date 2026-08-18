@@ -10,6 +10,7 @@ import {
   previousMonthKey,
   shiftMonth,
 } from "../lib/format";
+import { computeCushion } from "../lib/cushion";
 import type { TxCategory } from "../types";
 
 export function DashboardScreen() {
@@ -31,6 +32,7 @@ export function DashboardScreen() {
   const income = sumBy(currentTx, "income");
   const expense = sumBy(currentTx, "expense");
   const remaining = income - expense;
+  const cushion = computeCushion(household?.opening_balance, household?.opening_set_at, transactions);
 
   const slices = EXPENSE_CATEGORIES.map((cat) => ({
     category: cat.id,
@@ -59,6 +61,18 @@ export function DashboardScreen() {
           ‹
         </button>
       </div>
+
+      {cushion != null && (
+        <section className="mt-5 rounded-3xl bg-ink px-5 py-4 text-paper">
+          <p className="text-xs font-medium text-stone-300">כרית חיסכון · יתרת עו״ש</p>
+          <p className={`mt-1 text-2xl font-extrabold tabular-nums ${cushion < 0 ? "text-orange-300" : ""}`}>
+            {formatMoney(cushion)}
+          </p>
+          <p className="mt-1 text-xs text-stone-400">
+            מה שיש בחשבון עכשיו. מה שנשאר בסוף החודש נשאר כאן; חריגה יורדת מהכרית.
+          </p>
+        </section>
+      )}
 
       <section className="mt-5 grid grid-cols-3 gap-2">
         <Stat label="הכנסות" value={formatMoney(income)} />

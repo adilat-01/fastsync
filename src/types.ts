@@ -6,7 +6,8 @@ export type TxCategory =
   | "leisure"
   | "bills"
   | "other"
-  | "salary";
+  | "salary"
+  | "gift";
 
 export type Profile = {
   id: string;
@@ -18,6 +19,8 @@ export type Household = {
   id: string;
   name: string;
   invite_code: string;
+  opening_balance: number | null;
+  opening_set_at: string | null;
 };
 
 export type RecurringTemplate = {

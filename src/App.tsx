@@ -40,10 +40,10 @@ function Shell() {
       {tab === "settings" && <SettingsScreen />}
       <nav className="fixed inset-x-0 bottom-0 border-t border-stone-200 bg-paper/95 backdrop-blur">
         <div className="mx-auto grid max-w-md grid-cols-4 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
-          <NavBtn current={tab === "add"} onClick={() => setTab("add")} label="הוצאה" />
+          <NavBtn current={tab === "add"} onClick={() => setTab("add")} label="הוספה" />
           <NavBtn current={tab === "dash"} onClick={() => setTab("dash")} label="מצב" />
           <NavBtn current={tab === "history"} onClick={() => setTab("history")} label="היסטוריה" />
-          <NavBtn current={tab === "settings"} onClick={() => setTab("settings")} label="בית" />
+          <NavBtn current={tab === "settings"} onClick={() => setTab("settings")} label="הגדרות" />
         </div>
       </nav>
     </div>

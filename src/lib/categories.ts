@@ -8,9 +8,15 @@ export const EXPENSE_CATEGORIES: { id: TxCategory; label: string; color: string 
   { id: "other", label: "שונות", color: "#57534e" },
 ];
 
+export const INCOME_CATEGORIES: { id: TxCategory; label: string; color: string }[] = [
+  { id: "salary", label: "משכורת / העברה", color: "#047857" },
+  { id: "gift", label: "מתנה", color: "#0f766e" },
+  { id: "other", label: "שונות", color: "#57534e" },
+];
+
 export const ALL_CATEGORIES: { id: TxCategory; label: string; color: string }[] = [
   ...EXPENSE_CATEGORIES,
-  { id: "salary", label: "הכנסה", color: "#047857" },
+  ...INCOME_CATEGORIES.filter((c) => c.id !== "other"),
 ];
 
 export function categoryLabel(id: TxCategory): string {

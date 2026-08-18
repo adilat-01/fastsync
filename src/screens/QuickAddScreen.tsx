@@ -1,11 +1,13 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useSession } from "../session";
-import { EXPENSE_CATEGORIES } from "../lib/categories";
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "../lib/categories";
+import { computeCushion } from "../lib/cushion";
 import { formatMoney, monthKey, parseMonthKey, todayISO } from "../lib/format";
-import type { TxCategory } from "../types";
+import type { TxCategory, TxType } from "../types";
 
 export function QuickAddScreen() {
-  const { addTransaction, transactions } = useSession();
+  const { addTransaction, transactions, household } = useSession();
+  const [kind, setKind] = useState<TxType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<TxCategory>("groceries");
@@ -22,12 +24,13 @@ export function QuickAddScreen() {
   const income = monthTx.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
   const expense = monthTx.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
   const remaining = income - expense;
+  const cushion = computeCushion(household?.opening_balance, household?.opening_set_at, transactions);
 
   const suggestions = useMemo(() => {
     const seen = new Set<string>();
     const list: string[] = [];
     for (const t of transactions) {
-      if (t.type !== "expense") continue;
+      if (t.type !== kind) continue;
       const d = t.description.trim();
       if (!d || seen.has(d)) continue;
       seen.add(d);
@@ -35,7 +38,12 @@ export function QuickAddScreen() {
       if (list.length >= 8) break;
     }
     return list;
-  }, [transactions]);
+  }, [kind, transactions]);
+
+  function switchKind(next: TxType) {
+    setKind(next);
+    setCategory(next === "income" ? "gift" : "groceries");
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -44,10 +52,10 @@ export function QuickAddScreen() {
     setBusy(true);
     try {
       await addTransaction({
-        type: "expense",
+        type: kind,
         amount: value,
         category,
-        description: description.trim() || "הוצאה",
+        description: description.trim() || (kind === "income" ? "הכנסה" : "הוצאה"),
         occurred_on: date,
       });
       setAmount("");
@@ -62,19 +70,53 @@ export function QuickAddScreen() {
     }
   }
 
+  const cats = kind === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+
   return (
     <div className="mx-auto max-w-md px-4 pb-28 pt-6">
       <header className="rounded-3xl bg-ink px-5 py-5 text-paper">
-        <p className="text-xs font-medium text-stone-300">יתרה פנויה החודש</p>
-        <p className={`mt-1 text-3xl font-extrabold tabular-nums ${remaining < 0 ? "text-orange-300" : ""}`}>
-          {formatMoney(remaining)}
-        </p>
-        <p className="mt-2 text-xs text-stone-400">
-          הכנסות {formatMoney(income)} · הוצאות {formatMoney(expense)}
-        </p>
+        {cushion == null ? (
+          <>
+            <p className="text-xs font-medium text-stone-300">יתרה פנויה החודש</p>
+            <p className={`mt-1 text-3xl font-extrabold tabular-nums ${remaining < 0 ? "text-orange-300" : ""}`}>
+              {formatMoney(remaining)}
+            </p>
+            <p className="mt-2 text-xs text-stone-400">
+              הכנסות {formatMoney(income)} · הוצאות {formatMoney(expense)}
+            </p>
+            <p className="mt-2 text-xs text-stone-500">אפשר להגדיר יתרת עו״ש במסך בית — זו כרית החיסכון.</p>
+          </>
+        ) : (
+          <>
+            <p className="text-xs font-medium text-stone-300">כרית חיסכון · יתרת עו״ש</p>
+            <p className={`mt-1 text-3xl font-extrabold tabular-nums ${cushion < 0 ? "text-orange-300" : ""}`}>
+              {formatMoney(cushion)}
+            </p>
+            <p className="mt-2 text-xs text-stone-400">
+              החודש: נותרו {formatMoney(remaining)} · הכנסות {formatMoney(income)} · הוצאות {formatMoney(expense)}
+            </p>
+          </>
+        )}
       </header>
 
       <form onSubmit={onSubmit} className="mt-6">
+        <div className="mb-4 flex gap-2">
+          <button
+            type="button"
+            className={`chip ${kind === "expense" ? "chip-on" : ""}`}
+            onClick={() => switchKind("expense")}
+          >
+            הוצאה
+          </button>
+          <button
+            type="button"
+            className={`chip ${kind === "income" ? "chip-on" : ""}`}
+            onClick={() => switchKind("income")}
+          >
+            הכנסה חד-פעמית
+          </button>
+        </div>
+
         <label className="block">
           <span className="sr-only">סכום</span>
           <div className="flex items-baseline gap-2">
@@ -92,7 +134,7 @@ export function QuickAddScreen() {
         </label>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          {EXPENSE_CATEGORIES.map((cat) => (
+          {cats.map((cat) => (
             <button
               key={cat.id}
               type="button"
@@ -108,7 +150,7 @@ export function QuickAddScreen() {
           className="field mt-4"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="סופר, דלק, פארם..."
+          placeholder={kind === "income" ? "מתנה מההורים, בונוס..." : "סופר, דלק, פארם..."}
           list="recent-descriptions"
         />
         <datalist id="recent-descriptions">
@@ -130,7 +172,13 @@ export function QuickAddScreen() {
         )}
 
         <button className="btn-primary mt-6 w-full" disabled={busy} type="submit">
-          {busy ? "שומר..." : flash === "נשמר" ? "נשמר ✓" : "הוספת הוצאה"}
+          {busy
+            ? "שומר..."
+            : flash === "נשמר"
+              ? "נשמר ✓"
+              : kind === "income"
+                ? "הוספת הכנסה"
+                : "הוספת הוצאה"}
         </button>
         {flash && flash !== "נשמר" && <p className="mt-3 text-sm text-burn">{flash}</p>}
       </form>

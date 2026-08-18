@@ -7,6 +7,9 @@ create table if not exists public.households (
   id uuid primary key default gen_random_uuid(),
   name text not null default 'הבית שלנו',
   invite_code text not null unique,
+  opening_balance numeric(12, 2),
+  opening_set_at timestamptz,
+  recurring_applied_on date,
   created_at timestamptz not null default now()
 );
 
@@ -29,10 +32,13 @@ begin
       'leisure',
       'bills',
       'other',
-      'salary'
+      'salary',
+      'gift'
     );
   end if;
 end $$;
+
+alter type public.tx_category add value if not exists 'gift';
 
 create table if not exists public.recurring_templates (
   id uuid primary key default gen_random_uuid(),
@@ -157,9 +163,8 @@ begin
 end;
 $$;
 
--- Materialize recurring rows for the current month.
--- Called from the app on load so the free tier does not need pg_cron.
--- Also safe to schedule monthly via Supabase cron.
+-- Materialize recurring rows for the current month, once.
+-- If the user deletes a posted row this month, it stays deleted until next month.
 create or replace function public.ensure_recurring_for_current_month()
 returns integer
 language plpgsql
@@ -168,10 +173,22 @@ set search_path = public
 as $$
 declare
   hid uuid;
+  month_start date;
+  already date;
   inserted integer := 0;
 begin
   hid := public.current_household_id();
   if hid is null then
+    return 0;
+  end if;
+
+  month_start := date_trunc('month', current_date)::date;
+
+  select recurring_applied_on into already
+    from public.households
+   where id = hid;
+
+  if already is not distinct from month_start then
     return 0;
   end if;
 
@@ -185,7 +202,7 @@ begin
     t.amount,
     t.category,
     t.description,
-    date_trunc('month', current_date)::date,
+    month_start,
     t.id
   from public.recurring_templates t
   where t.household_id = hid
@@ -198,6 +215,11 @@ begin
     );
 
   get diagnostics inserted = row_count;
+
+  update public.households
+     set recurring_applied_on = month_start
+   where id = hid;
+
   return inserted;
 end;
 $$;
@@ -228,6 +250,12 @@ create policy "households members"
   on public.households for select
   using (id = public.current_household_id());
 
+drop policy if exists "households update members" on public.households;
+create policy "households update members"
+  on public.households for update
+  using (id = public.current_household_id())
+  with check (id = public.current_household_id());
+
 drop policy if exists "recurring members" on public.recurring_templates;
 create policy "recurring members"
   on public.recurring_templates for all
@@ -254,6 +282,13 @@ grant execute on function public.current_household_id() to authenticated;
 do $$
 begin
   alter publication supabase_realtime add table public.transactions;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.households;
 exception
   when duplicate_object then null;
 end $$;

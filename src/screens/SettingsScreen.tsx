@@ -1,17 +1,32 @@
 import { useState, type FormEvent } from "react";
 import { useSession } from "../session";
 import { EXPENSE_CATEGORIES, categoryLabel } from "../lib/categories";
+import { computeCushion } from "../lib/cushion";
 import { formatMoney } from "../lib/format";
-import type { TxCategory } from "../types";
+import type { Household, TxCategory } from "../types";
 
 export function SettingsScreen() {
-  const { household, members, templates, addTemplate, toggleTemplate, deleteTemplate, signOut } =
-    useSession();
+  const {
+    household,
+    members,
+    templates,
+    transactions,
+    addTemplate,
+    toggleTemplate,
+    deleteTemplate,
+    setOpeningBalance,
+    signOut,
+  } = useSession();
   const [kind, setKind] = useState<"income" | "expense">("expense");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<TxCategory>("bills");
   const [copied, setCopied] = useState(false);
+  const [cushionInput, setCushionInput] = useState(
+    household?.opening_balance != null ? String(household.opening_balance) : "",
+  );
+  const [cushionBusy, setCushionBusy] = useState(false);
+  const [cushionMsg, setCushionMsg] = useState<string | null>(null);
 
   async function onAdd(e: FormEvent) {
     e.preventDefault();
@@ -52,6 +67,33 @@ export function SettingsScreen() {
           חברים בבית: {members.map((m) => m.display_name || "שותף").join(" · ") || "רק את/ה בינתיים"}
         </p>
       </section>
+
+      <CushionCard
+        household={household}
+        cushionInput={cushionInput}
+        setCushionInput={setCushionInput}
+        cushionBusy={cushionBusy}
+        cushionMsg={cushionMsg}
+        onSave={async () => {
+          const value = Number(cushionInput);
+          if (cushionInput.trim() === "" || !Number.isFinite(value)) return;
+          setCushionBusy(true);
+          setCushionMsg(null);
+          try {
+            await setOpeningBalance(value);
+            setCushionMsg("נשמר. מכאן כל תנועה מעדכנת את הכרית.");
+          } catch (err) {
+            setCushionMsg(err instanceof Error ? err.message : "שגיאה");
+          } finally {
+            setCushionBusy(false);
+          }
+        }}
+        currentCushion={computeCushion(
+          household?.opening_balance,
+          household?.opening_set_at,
+          transactions,
+        )}
+      />
 
       <section className="mt-6">
         <h2 className="text-sm font-bold text-ink">הוראות קבע והכנסות</h2>
@@ -136,5 +178,55 @@ export function SettingsScreen() {
         יציאה מהחשבון
       </button>
     </div>
+  );
+}
+
+function CushionCard({
+  household,
+  cushionInput,
+  setCushionInput,
+  cushionBusy,
+  cushionMsg,
+  onSave,
+  currentCushion,
+}: {
+  household: Household | null;
+  cushionInput: string;
+  setCushionInput: (v: string) => void;
+  cushionBusy: boolean;
+  cushionMsg: string | null;
+  onSave: () => Promise<void>;
+  currentCushion: number | null;
+}) {
+  return (
+    <section className="card mt-4 p-4">
+      <h2 className="text-sm font-bold text-ink">כרית חיסכון · יתרת עו״ש</h2>
+      <p className="mt-1 text-xs leading-relaxed text-stone-500">
+        כמה יש בחשבון עכשיו לפי הבנק. מכאן כל הוצאה מורידה וכל הכנסה מעלה. אם נשאר כסף בסוף החודש —
+        הכרית גדלה לבד. אם חורגים — זה יורד מהכרית.
+      </p>
+      {currentCushion != null && (
+        <p className="mt-3 text-lg font-extrabold tabular-nums text-accent">{formatMoney(currentCushion)}</p>
+      )}
+      <form
+        className="mt-3 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onSave();
+        }}
+      >
+        <input
+          className="field"
+          inputMode="decimal"
+          value={cushionInput}
+          onChange={(e) => setCushionInput(e.target.value.replace(/[^\d.-]/g, ""))}
+          placeholder="לדוגמה 400"
+        />
+        <button className="btn-primary shrink-0 px-4" disabled={cushionBusy} type="submit">
+          {cushionBusy ? "..." : household?.opening_set_at ? "עדכון" : "שמירה"}
+        </button>
+      </form>
+      {cushionMsg && <p className="mt-2 text-xs text-stone-500">{cushionMsg}</p>}
+    </section>
   );
 }
