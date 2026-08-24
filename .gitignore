@@ -1,10 +1,15 @@
 node_modules
 dist
 dist-ssr
+dev-dist
 *.local
 .env
 .env.local
+.env.*.local
+!.env.example
 NOTEPAD.txt
 .DS_Store
+Thumbs.db
 .vite
-dev-dist
+.vscode/
+.idea/

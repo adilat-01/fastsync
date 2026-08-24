@@ -1,88 +1,57 @@
-# FastSync — הוצאות משותפות לבני זוג
+# FastSync
 
-אפליקציית מובייל קלה לניהול חשבון בנק משותף: הזנת הוצאה בכמה שניות, הוראות קבע שנכנסות לבד ב-1 לחודש, ודשבורד של הכנסות מול הוצאות.
+Mobile-first PWA for a shared household budget: log an expense in a few seconds, recurring bills on the 1st of the month, and a dashboard of income vs spend.
 
-**אין שרת ייעודי.** האתר רץ ב-Netlify. הזיכרון הפיננסי (כולל השוואה בין חודשים) יושב ב-Supabase PostgreSQL.
+No custom backend. The app is static on Netlify. Data and auth live in Supabase (PostgreSQL + Realtime).
 
-## מה בונים כאן
+## Stack
 
-| שכבה | שירות | תפקיד |
-|------|--------|--------|
-| קוד | GitHub | מקור האמת |
-| אתר + PWA | Netlify | אירוח סטטי ופריסה מכל push |
-| נתונים, התחברות, Realtime | Supabase | שניכם רואים את אותו הבית |
-| Render / Vercel | לא בשימוש ב-MVP | לא צריך שרת שרץ 24/7 |
+| Layer | Service |
+|-------|---------|
+| App | React 19, Vite, Tailwind, PWA |
+| Hosting | Netlify |
+| Auth + DB + Realtime | Supabase |
 
-Vercel ו-Netlify עושים את אותו הדבר לאתר סטטי. ה-PRD בחר **Netlify** — נשארים איתו.
+## Repo layout
 
-## הקמה חד-פעמית (בערך 20 דקות)
+```
+├── src/                 # React screens and logic
+├── supabase/            # schema.sql + migrations
+├── public/              # PWA icons
+├── netlify.toml
+├── PRD.txt
+└── .env.example
+```
 
-### 1) Supabase
-
-1. צרו פרויקט ב-[supabase.com](https://supabase.com).
-2. Authentication → Providers → Email: כבו Confirm email (אפליקציה פרטית לזוג, בלי אימות מייל).
-3. SQL Editor: הדביקו והריצו את כל הקובץ `supabase/schema.sql`.
-4. Settings → API: העתיקו את Project URL ואת `anon` `public` key.
-
-### 2) הרצה מקומית
+## Quick start
 
 ```bash
 copy .env.example .env
-```
-
-מלאו ב-`.env`:
-
-```
-VITE_SUPABASE_URL=https://xxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJ...
-```
-
-```bash
 npm install
 npm run dev
 ```
 
-פתחו את הכתובת בטלפון (אותה רשת Wi-Fi) או ב-Chrome עם מצב מובייל.
+Fill `.env` (from Supabase → Settings → API):
 
-### 3) GitHub + Netlify
-
-```bash
-git init
-git add .
-git commit -m "Initial FastSync app"
+```
+VITE_SUPABASE_URL=https://xxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-צרו repo ב-GitHub והעלו. ב-Netlify:
+Then run `supabase/schema.sql` (and later migrations if needed) in the SQL editor.
 
-1. Add new site → Import from GitHub
-2. Build command: `npm run build`
-3. Publish directory: `dist`
-4. Environment variables (Production):
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+## Recurring bills
 
-אחרי ה-deploy: בטלפון פתחו את האתר → Share → Add to Home Screen. זה ה-PWA.
+`ensure_recurring_for_current_month` runs when the app opens. If a new month started, salaries and standing orders are inserted once (no duplicates).
 
-### 4) כניסה של שני בני הזוג
+## Security
 
-1. אחד נרשם, יוצר בית, ממלא משכורות והוראות קבע.
-2. מעתיקים את קוד ההזמנה ממסך **בית**.
-3. השני נרשם ובוחר «הצטרפות עם קוד».
+- Never commit `.env`
+- Use the **anon** key in the client, not the `service_role` key
+- Keep this repo **private** — it is a personal household app
 
-מכאן הכל מסונכרן בזמן אמת.
+## Categories
 
-## איך עובדת האוטומציה של ה-1 לחודש
+Grocery · Dining / Wolt · Transport · Leisure · Bills · Misc
 
-אין צורך ב-Render cron. פונקציית SQL בשם `ensure_recurring_for_current_month` רצה בכל פתיחה של האפליקציה. אם חודש חדש התחיל — הוראות הקבע והמשכורות נכנסות פעם אחת (עם מניעת כפילות).
-
-אם תרצו כניסה גם בלי שמישהו יפתח את האפליקציה, אפשר ב-Supabase להוסיף scheduled function שקוראת לאותה RPC. זה מותרות, לא חובה ל-MVP.
-
-## שימור ידע
-
-בדשבורד («מצב») אפשר לדפדף בין חודשים. לכל קטגוריה מוצג הסכום מול החודש הקודם וההפרש באחוזים. הנתונים לא נשמרים בדפדפן — הם ב-PostgreSQL, ולכן שורדים החלפת טלפון.
-
-## קטגוריות
-
-סופר · מסעדות / וולט · תחבורה · פנאי · חשבונות · שונות
-
-אין שדה «מי שילם» — הכל יוצא מהחשבון המשותף.
+There is no “who paid” field — everything is treated as coming from the joint account.
