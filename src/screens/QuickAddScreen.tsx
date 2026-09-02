@@ -3,6 +3,7 @@ import { useSession } from "../session";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "../lib/categories";
 import { computeCushion, isPersonalExpense } from "../lib/cushion";
 import { formatMoney, monthKey, parseMonthKey, todayISO } from "../lib/format";
+import { formatDbError } from "../lib/errors";
 import type { TxCategory, TxType } from "../types";
 
 export function QuickAddScreen() {
@@ -73,7 +74,7 @@ export function QuickAddScreen() {
       setFlash("נשמר");
       window.setTimeout(() => setFlash(null), 1400);
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "שגיאה");
+      setFlash(formatDbError(err));
     } finally {
       setBusy(false);
     }

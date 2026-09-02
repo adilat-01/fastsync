@@ -10,6 +10,13 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import type { Household, Profile, RecurringTemplate, Transaction, TxCategory, TxType, PaidFrom } from "./types";
+import { formatDbError, isSchemaMismatchError } from "./lib/errors";
+import {
+  normalizeHousehold,
+  normalizeProfile,
+  normalizeTemplate,
+  normalizeTransaction,
+} from "./lib/normalize";
 import { monthKey, parseMonthKey, todayISO } from "./lib/format";
 
 type SessionValue = {
@@ -62,6 +69,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const loadHouseholdData = useCallback(async (userId: string) => {
     if (!supabase) return;
+
     let { data: profileRow, error: profileError } = await supabase
       .from("profiles")
       .select("id, household_id, display_name")
@@ -78,7 +86,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (createError) throw createError;
       profileRow = created;
     }
-    setProfile(profileRow);
+    setProfile(normalizeProfile(profileRow as Record<string, unknown>));
 
     if (!profileRow.household_id) {
       setHousehold(null);
@@ -88,14 +96,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    await supabase.rpc("ensure_recurring_for_current_month");
+    const { error: rpcError } = await supabase.rpc("ensure_recurring_for_current_month");
+    if (rpcError) {
+      console.warn("ensure_recurring_for_current_month:", rpcError.message);
+    }
 
-    const [houseRes, memberRes, txRes, tmplRes] = await Promise.all([
-      supabase
+    let houseRes = await supabase
+      .from("households")
+      .select("id, name, invite_code, opening_balance, opening_set_at")
+      .eq("id", profileRow.household_id)
+      .single();
+
+    if (houseRes.error && isSchemaMismatchError(houseRes.error)) {
+      houseRes = await supabase
         .from("households")
-        .select("id, name, invite_code, opening_balance, opening_set_at")
+        .select("id, name, invite_code")
         .eq("id", profileRow.household_id)
-        .single(),
+        .single();
+    }
+
+    const [memberRes, txRes, tmplRes] = await Promise.all([
       supabase
         .from("profiles")
         .select("id, household_id, display_name")
@@ -118,10 +138,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (txRes.error) throw txRes.error;
     if (tmplRes.error) throw tmplRes.error;
 
-    setHousehold(houseRes.data);
-    setMembers(memberRes.data ?? []);
-    setTransactions((txRes.data ?? []) as Transaction[]);
-    setTemplates((tmplRes.data ?? []) as RecurringTemplate[]);
+    setHousehold(normalizeHousehold(houseRes.data as Record<string, unknown>));
+    setMembers((memberRes.data ?? []).map((row) => normalizeProfile(row as Record<string, unknown>)));
+    setTransactions((txRes.data ?? []).map((row) => normalizeTransaction(row as Record<string, unknown>)));
+    setTemplates((tmplRes.data ?? []).map((row) => normalizeTemplate(row as Record<string, unknown>)));
   }, []);
 
   const thisMonth = parseMonthKey(monthKey(new Date()));
@@ -164,8 +184,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!supabase || !user) return;
     setError(null);
-    await loadHouseholdData(user.id);
+    try {
+      await supabase.auth.refreshSession();
+      await loadHouseholdData(user.id);
+      setError(null);
+    } catch (err) {
+      setError(formatDbError(err));
+      throw err;
+    }
   }, [loadHouseholdData, user]);
+
+  const safeLoad = useCallback(
+    async (userId: string) => {
+      try {
+        await supabase?.auth.refreshSession();
+        await loadHouseholdData(userId);
+        setError(null);
+      } catch (err) {
+        setError(formatDbError(err));
+      }
+    },
+    [loadHouseholdData],
+  );
 
   useEffect(() => {
     if (!supabase) {
@@ -181,8 +221,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setUser(nextUser);
       try {
         if (nextUser) await loadHouseholdData(nextUser.id);
+        setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "שגיאה בטעינה");
+        setError(formatDbError(err));
       } finally {
         setReady(true);
       }
@@ -192,9 +233,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const nextUser = session?.user ?? null;
       setUser(nextUser);
       if (nextUser) {
-        loadHouseholdData(nextUser.id).catch((err) => {
-          setError(err instanceof Error ? err.message : "שגיאה בטעינה");
-        });
+        safeLoad(nextUser.id);
       } else {
         setProfile(null);
         setHousehold(null);
@@ -208,7 +247,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, [loadHouseholdData]);
+  }, [loadHouseholdData, safeLoad]);
 
   useEffect(() => {
     const client = supabase;
@@ -225,7 +264,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           filter: `household_id=eq.${household.id}`,
         },
         () => {
-          loadHouseholdData(userId).catch(() => undefined);
+          safeLoad(userId);
         },
       )
       .subscribe();
@@ -233,7 +272,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       void client.removeChannel(channel);
     };
-  }, [household, loadHouseholdData, user]);
+  }, [household, safeLoad, user]);
 
   const value = useMemo<SessionValue>(
     () => ({
@@ -278,7 +317,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       addTransaction: async (input) => {
         if (!supabase || !household || !user) throw new Error("אין משק בית פעיל");
-        const { error: insertError } = await supabase.from("transactions").insert({
+        const base = {
           household_id: household.id,
           created_by: user.id,
           type: input.type,
@@ -286,11 +325,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           category: input.category,
           description: input.description.trim() || (input.type === "income" ? "הכנסה" : "הוצאה"),
           occurred_on: input.occurred_on ?? todayISO(),
-          paid_from: input.type === "income" ? "shared" : (input.paid_from ?? "shared"),
-          paid_by: input.type === "income" || input.paid_from !== "personal" ? null : (input.paid_by ?? user.id),
-        });
-        if (insertError) throw insertError;
-        await loadHouseholdData(user.id);
+        };
+        const withWallet =
+          input.type === "expense"
+            ? {
+                ...base,
+                paid_from: input.paid_from ?? "shared",
+                paid_by: input.paid_from === "personal" ? (input.paid_by ?? user.id) : null,
+              }
+            : base;
+
+        let { error: insertError } = await supabase.from("transactions").insert(withWallet);
+        if (insertError && isSchemaMismatchError(insertError)) {
+          ({ error: insertError } = await supabase.from("transactions").insert(base));
+        }
+        if (insertError) throw new Error(formatDbError(insertError));
+
+        try {
+          await loadHouseholdData(user.id);
+          setError(null);
+        } catch (reloadErr) {
+          const msg = formatDbError(reloadErr);
+          setError(`${msg} (ייתכן שהרשומה נשמרה — נסי «רענון»)`);
+        }
       },
       deleteTransaction: async (id) => {
         if (!supabase || !user) return;
@@ -351,7 +408,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await loadHouseholdData(user.id);
       },
     }),
-    [error, household, loadHouseholdData, members, postTemplateThisMonth, profile, ready, refresh, removePostedThisMonth, templates, transactions, user],
+    [error, household, loadHouseholdData, members, postTemplateThisMonth, profile, ready, refresh, removePostedThisMonth, safeLoad, templates, transactions, user],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

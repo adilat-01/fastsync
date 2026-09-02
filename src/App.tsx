@@ -20,7 +20,7 @@ export function App() {
 }
 
 function Shell() {
-  const { ready, user, household, error } = useSession();
+  const { ready, user, household, error, refresh } = useSession();
   const [tab, setTab] = useState<Tab>("add");
 
   if (!ready) {
@@ -33,7 +33,18 @@ function Shell() {
 
   return (
     <div className="min-h-dvh">
-      {error && <p className="bg-orange-50 px-4 py-2 text-center text-xs text-burn">{error}</p>}
+      {error && (
+        <div className="bg-orange-50 px-4 py-2 text-center text-xs text-burn">
+          <p>{error}</p>
+          <button
+            className="mt-1 font-semibold text-accent underline-offset-2 hover:underline"
+            type="button"
+            onClick={() => void refresh()}
+          >
+            רענון
+          </button>
+        </div>
+      )}
       {tab === "add" && <QuickAddScreen />}
       {tab === "dash" && <DashboardScreen />}
       {tab === "history" && <HistoryScreen />}
