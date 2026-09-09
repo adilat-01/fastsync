@@ -34,7 +34,7 @@ FastSync is built for **one joint household wallet** — fast entry on the phone
 - Everything is treated as coming from the **joint account** (no “who paid”)
 - Categories: Grocery · Dining / Wolt · Transport · Leisure · Bills · Misc
 - Personal / one-off income and a cash cushion are supported for a fuller picture
-- Built as a personal product for real household use (repo is private)
+- Built as a personal product for real household use
 
 ---
 
@@ -64,6 +64,6 @@ Fill `.env` from Supabase → Settings → API, then run `supabase/schema.sql` i
 
 - Never commit `.env`
 - Use the **anon** key in the client — never `service_role`
-- Keep the repo **private**
+- Treat this as portfolio code — never commit real household data or secrets
 
 Product spec: [PRD.txt](PRD.txt)
