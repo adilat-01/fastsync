@@ -1,5 +1,7 @@
 # FastSync
 
+**Live:** [ourmoneytracker.netlify.app](https://ourmoneytracker.netlify.app)
+
 A mobile-first PWA for couples who share a bank account: log an expense in a few seconds, auto-load standing orders on the 1st of the month, and see income vs spend without spreadsheet chaos.
 
 ## Why it exists
@@ -7,32 +9,32 @@ A mobile-first PWA for couples who share a bank account: log an expense in a few
 Shared money is simple in theory and messy in practice:
 
 - expenses get forgotten
-- standing orders are “somewhere in the bank app”
-- nobody remembers last month’s grocery total
+- standing orders are ג€somewhere in the bank appג€
+- nobody remembers last monthג€™s grocery total
 
-FastSync is built for **one joint household wallet** — fast entry on the phone, automatic monthly fixed costs, and a clear monthly picture.
+FastSync is built for **one joint household wallet** ג€” fast entry on the phone, automatic monthly fixed costs, and a clear monthly picture.
 
 ## What you can do
 
-- **Quick-add an expense** — amount + category in seconds
-- **Recurring bills & salaries** — set once; they land automatically each month
-- **Dashboard (“Status”)** — income vs spend for the current month
-- **Month comparison** — see category totals vs the previous month
-- **Shared household** — both partners see the same data in real time
-- **Install as PWA** — Add to Home Screen on the phone
+- **Quick-add an expense** ג€” amount + category in seconds
+- **Recurring bills & salaries** ג€” set once; they land automatically each month
+- **Dashboard (ג€Statusג€)** ג€” income vs spend for the current month
+- **Month comparison** ג€” see category totals vs the previous month
+- **Shared household** ג€” both partners see the same data in real time
+- **Install as PWA** ג€” Add to Home Screen on the phone
 
 ## How it works (user flow)
 
 1. **Sign up** and create a household (or join with an invite code)
 2. Set **salaries** and **standing orders** once
-3. Day to day: open the app → **quick-add** expenses
+3. Day to day: open the app ג†’ **quick-add** expenses
 4. On the **1st of the month**, fixed income/expenses are inserted automatically when someone opens the app
 5. Check the **dashboard** to see where the month stands
 
 ## Product notes
 
-- Everything is treated as coming from the **joint account** (no “who paid”)
-- Categories: Grocery · Dining / Wolt · Transport · Leisure · Bills · Misc
+- Everything is treated as coming from the **joint account** (no ג€who paidג€)
+- Categories: Grocery ֲ· Dining / Wolt ֲ· Transport ֲ· Leisure ֲ· Bills ֲ· Misc
 - Personal / one-off income and a cash cushion are supported for a fuller picture
 - Built as a personal product for real household use
 
@@ -48,7 +50,7 @@ FastSync is built for **one joint household wallet** — fast entry on the phone
 | Hosting | Netlify |
 | Auth + DB + Realtime | Supabase |
 
-No dedicated app server — Netlify serves the static app; Supabase holds the data.
+No dedicated app server ג€” Netlify serves the static app; Supabase holds the data.
 
 ### Quick start
 
@@ -58,12 +60,12 @@ npm install
 npm run dev
 ```
 
-Fill `.env` from Supabase → Settings → API, then run `supabase/schema.sql` in the SQL editor.
+Fill `.env` from Supabase ג†’ Settings ג†’ API, then run `supabase/schema.sql` in the SQL editor.
 
 ### Security
 
 - Never commit `.env`
-- Use the **anon** key in the client — never `service_role`
-- Treat this as portfolio code — never commit real household data or secrets
+- Use the **anon** key in the client ג€” never `service_role`
+- Treat this as portfolio code ג€” never commit real household data or secrets
 
 Product spec: [PRD.txt](PRD.txt)
