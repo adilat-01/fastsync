@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useSession } from "../session";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "../lib/categories";
 import { computeCushion, isPersonalExpense } from "../lib/cushion";
+import { descriptionLabel, monthChipLabel, monthName, recentMonthKeys, splitAmount } from "../lib/bills";
 import { formatMoney, monthKey, parseMonthKey, todayISO } from "../lib/format";
 import { formatDbError } from "../lib/errors";
 import type { TxCategory, TxType } from "../types";
@@ -16,6 +17,8 @@ export function QuickAddScreen() {
   const [paidBy, setPaidBy] = useState<string>("");
   const [date, setDate] = useState(todayISO());
   const [showDate, setShowDate] = useState(false);
+  const [months, setMonths] = useState<string[]>(() => [monthKey(new Date())]);
+  const monthChoices = useMemo(() => recentMonthKeys(12), []);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -37,7 +40,7 @@ export function QuickAddScreen() {
     const list: string[] = [];
     for (const t of transactions) {
       if (t.type !== kind) continue;
-      const d = t.description.trim();
+      const d = descriptionLabel(t.description).trim();
       if (!d || seen.has(d)) continue;
       seen.add(d);
       list.push(d);
@@ -50,6 +53,18 @@ export function QuickAddScreen() {
     setKind(next);
     setCategory(next === "income" ? "gift" : "groceries");
     setPaidFrom("shared");
+  }
+
+  function handleToggleMonth(key: string) {
+    const next = months.includes(key)
+      ? months.length === 1
+        ? months
+        : months.filter((month) => month !== key)
+      : [...months, key].sort();
+    setMonths(next);
+    if (next.length === 1 && !date.startsWith(next[0])) {
+      setDate(parseMonthKey(next[0]).start);
+    }
   }
 
   async function onSubmit(e: FormEvent) {
@@ -66,10 +81,12 @@ export function QuickAddScreen() {
         occurred_on: date,
         paid_from: kind === "expense" ? paidFrom : "shared",
         paid_by: kind === "expense" && paidFrom === "personal" ? paidBy || user?.id || null : null,
+        cover_months: kind === "expense" && category === "bills" ? months : undefined,
       });
       setAmount("");
       setDescription("");
       setDate(todayISO());
+      setMonths([monthKey(new Date())]);
       setPaidFrom("shared");
       setFlash("נשמר");
       window.setTimeout(() => setFlash(null), 1400);
@@ -81,6 +98,13 @@ export function QuickAddScreen() {
   }
 
   const cats = kind === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const billMonths = category === "bills" && kind === "expense";
+  const sortedMonths = [...months].sort();
+  const numericAmount = Number(amount);
+  const shares =
+    billMonths && Number.isFinite(numericAmount) && numericAmount > 0
+      ? splitAmount(numericAmount, sortedMonths.length)
+      : [];
 
   return (
     <div className="mx-auto max-w-md px-4 pb-28 pt-6">
@@ -159,11 +183,42 @@ export function QuickAddScreen() {
           ))}
         </div>
 
+        {billMonths && (
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-medium text-stone-500">על אילו חודשים החשבון חל?</p>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="חודשים שהחשבון חל עליהם">
+              {monthChoices.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={months.includes(key)}
+                  className={`chip ${months.includes(key) ? "chip-on" : ""}`}
+                  onClick={() => handleToggleMonth(key)}
+                >
+                  {monthChipLabel(key)}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-stone-500">
+              {sortedMonths.length > 1
+                ? "הסכום מתחלק בין החודשים שנבחרו. לחיצה נוספת על חודש מבטלת אותו."
+                : `כל הסכום נכנס ל${monthName(sortedMonths[0])}. אפשר לבחור עוד חודשים כדי לחלק אותו.`}
+            </p>
+            {shares.length > 1 && (
+              <p className="mt-1 text-xs font-medium text-ink">
+                {sortedMonths.map((key, index) => `${monthName(key)} ${formatMoney(shares[index])}`).join(" · ")}
+              </p>
+            )}
+          </div>
+        )}
+
         <input
           className="field mt-4"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder={kind === "income" ? "מתנה מההורים, בונוס..." : "סופר, דלק, פארם..."}
+          placeholder={
+            kind === "income" ? "מתנה מההורים, בונוס..." : billMonths ? "חשמל, מים, ארנונה..." : "סופר, דלק, פארם..."
+          }
           list="recent-descriptions"
         />
         <datalist id="recent-descriptions">
@@ -223,16 +278,26 @@ export function QuickAddScreen() {
           </p>
         )}
 
-        <button className="mt-3 text-sm text-stone-500" type="button" onClick={() => setShowDate((v) => !v)}>
-          {showDate ? "הסתר תאריך" : `תאריך: ${date.split("-").reverse().join(".")}`}
-        </button>
-        {showDate && (
-          <input
-            className="field mt-2"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
+        {!(billMonths && months.length > 1) && (
+          <>
+            <button className="mt-3 text-sm text-stone-500" type="button" onClick={() => setShowDate((v) => !v)}>
+              {showDate ? "הסתר תאריך" : `תאריך: ${date.split("-").reverse().join(".")}`}
+            </button>
+            {showDate && (
+              <input
+                className="field mt-2"
+                type="date"
+                value={date}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDate(next);
+                  if (billMonths && months.length === 1 && next && !next.startsWith(months[0])) {
+                    setMonths([next.slice(0, 7)]);
+                  }
+                }}
+              />
+            )}
+          </>
         )}
 
         <button className="btn-primary mt-6 w-full" disabled={busy} type="submit">

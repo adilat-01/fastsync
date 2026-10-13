@@ -18,6 +18,12 @@ import {
   normalizeTransaction,
 } from "./lib/normalize";
 import { monthKey, parseMonthKey, todayISO } from "./lib/format";
+import {
+  buildSpreadRows,
+  LEGACY_ELECTRICITY_GROUP,
+  occurredOnForSingleMonth,
+  planLegacyElectricityRepair,
+} from "./lib/bills";
 
 type SessionValue = {
   ready: boolean;
@@ -42,8 +48,10 @@ type SessionValue = {
     occurred_on?: string;
     paid_from?: PaidFrom;
     paid_by?: string | null;
+    cover_months?: string[];
   }) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
+  deleteTransactions: (ids: string[]) => Promise<void>;
   addTemplate: (input: {
     type: TxType;
     amount: number;
@@ -56,6 +64,69 @@ type SessionValue = {
 };
 
 const SessionContext = createContext<SessionValue | null>(null);
+
+async function insertTxRows(rows: Record<string, unknown>[]): Promise<void> {
+  if (!supabase) throw new Error("חסר חיבור ל-Supabase");
+  let { error } = await supabase.from("transactions").insert(rows);
+  if (error && isSchemaMismatchError(error)) {
+    const stripped = rows.map((row) => {
+      const copy = { ...row };
+      delete copy.paid_from;
+      delete copy.paid_by;
+      return copy;
+    });
+    ({ error } = await supabase.from("transactions").insert(stripped));
+  }
+  if (error) throw new Error(formatDbError(error));
+}
+
+let repairTask: Promise<void> | null = null;
+
+async function applyLegacyElectricityRepair(txs: Transaction[], userId: string): Promise<boolean> {
+  const plan = planLegacyElectricityRepair(txs);
+  if (!plan || !supabase) return false;
+  if (repairTask) {
+    await repairTask;
+    return true;
+  }
+
+  const run = async () => {
+    if (!supabase) return;
+    if (plan.parts) {
+      const { data: existing, error: existingError } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("household_id", plan.source.household_id)
+        .ilike("description", `%§${LEGACY_ELECTRICITY_GROUP}%`)
+        .limit(1);
+      if (existingError) throw existingError;
+      if (!existing?.length) {
+        await insertTxRows(
+          plan.parts.map((part) => ({
+            household_id: plan.source.household_id,
+            created_by: plan.source.created_by ?? userId,
+            type: plan.source.type,
+            amount: part.amount,
+            category: plan.source.category,
+            description: part.description,
+            occurred_on: part.occurred_on,
+            paid_from: plan.source.paid_from ?? "shared",
+            paid_by: plan.source.paid_by,
+          })),
+        );
+      }
+    }
+
+    const { error: deleteError } = await supabase.from("transactions").delete().eq("id", plan.deleteId);
+    if (deleteError) throw deleteError;
+  };
+
+  repairTask = run().finally(() => {
+    repairTask = null;
+  });
+  await repairTask;
+  return true;
+}
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -138,9 +209,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (txRes.error) throw txRes.error;
     if (tmplRes.error) throw tmplRes.error;
 
+    let txRows = (txRes.data ?? []).map((row) => normalizeTransaction(row as Record<string, unknown>));
+    const repaired = await applyLegacyElectricityRepair(txRows, userId);
+    if (repaired) {
+      const again = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("household_id", profileRow.household_id)
+        .order("occurred_on", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (again.error) throw again.error;
+      txRows = (again.data ?? []).map((row) => normalizeTransaction(row as Record<string, unknown>));
+    }
+
     setHousehold(normalizeHousehold(houseRes.data as Record<string, unknown>));
     setMembers((memberRes.data ?? []).map((row) => normalizeProfile(row as Record<string, unknown>)));
-    setTransactions((txRes.data ?? []).map((row) => normalizeTransaction(row as Record<string, unknown>)));
+    setTransactions(txRows);
     setTemplates((tmplRes.data ?? []).map((row) => normalizeTemplate(row as Record<string, unknown>)));
   }, []);
 
@@ -317,29 +401,53 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       addTransaction: async (input) => {
         if (!supabase || !household || !user) throw new Error("אין משק בית פעיל");
-        const base = {
-          household_id: household.id,
-          created_by: user.id,
-          type: input.type,
-          amount: input.amount,
-          category: input.category,
-          description: input.description.trim() || (input.type === "income" ? "הכנסה" : "הוצאה"),
-          occurred_on: input.occurred_on ?? todayISO(),
-        };
-        const withWallet =
+        const description = input.description.trim() || (input.type === "income" ? "הכנסה" : "הוצאה");
+        const months = [...(input.cover_months ?? [])].sort();
+        const wallet =
           input.type === "expense"
             ? {
-                ...base,
                 paid_from: input.paid_from ?? "shared",
                 paid_by: input.paid_from === "personal" ? (input.paid_by ?? user.id) : null,
               }
-            : base;
+            : {};
 
-        let { error: insertError } = await supabase.from("transactions").insert(withWallet);
-        if (insertError && isSchemaMismatchError(insertError)) {
-          ({ error: insertError } = await supabase.from("transactions").insert(base));
+        if (months.length > 1) {
+          const parts = buildSpreadRows({
+            description,
+            amount: input.amount,
+            months,
+            groupId: Math.random().toString(36).slice(2, 8),
+          });
+          await insertTxRows(
+            parts.map((part) => ({
+              household_id: household.id,
+              created_by: user.id,
+              type: input.type,
+              category: input.category,
+              amount: part.amount,
+              description: part.description,
+              occurred_on: part.occurred_on,
+              ...wallet,
+            })),
+          );
+        } else {
+          const occurredOn =
+            months.length === 1
+              ? occurredOnForSingleMonth(months[0], input.occurred_on ?? todayISO())
+              : (input.occurred_on ?? todayISO());
+          await insertTxRows([
+            {
+              household_id: household.id,
+              created_by: user.id,
+              type: input.type,
+              amount: input.amount,
+              category: input.category,
+              description,
+              occurred_on: occurredOn,
+              ...wallet,
+            },
+          ]);
         }
-        if (insertError) throw new Error(formatDbError(insertError));
 
         try {
           await loadHouseholdData(user.id);
@@ -352,6 +460,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       deleteTransaction: async (id) => {
         if (!supabase || !user) return;
         const { error: deleteError } = await supabase.from("transactions").delete().eq("id", id);
+        if (deleteError) throw deleteError;
+        await loadHouseholdData(user.id);
+      },
+      deleteTransactions: async (ids) => {
+        if (!supabase || !user || ids.length === 0) return;
+        const { error: deleteError } = await supabase.from("transactions").delete().in("id", ids);
         if (deleteError) throw deleteError;
         await loadHouseholdData(user.id);
       },
