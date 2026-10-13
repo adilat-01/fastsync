@@ -2,7 +2,14 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useSession } from "../session";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "../lib/categories";
 import { computeCushion, isPersonalExpense } from "../lib/cushion";
-import { descriptionLabel, monthChipLabel, monthName, recentMonthKeys, splitAmount } from "../lib/bills";
+import {
+  descriptionLabel,
+  monthChipLabel,
+  monthName,
+  recentMonthKeys,
+  splitAmount,
+  transactionsInMonth,
+} from "../lib/bills";
 import { formatMoney, monthKey, parseMonthKey, todayISO } from "../lib/format";
 import { formatDbError } from "../lib/errors";
 import type { TxCategory, TxType } from "../types";
@@ -22,10 +29,10 @@ export function QuickAddScreen() {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
-  const month = parseMonthKey(monthKey(new Date()));
+  const currentKey = monthKey(new Date());
   const monthTx = useMemo(
-    () => transactions.filter((t) => t.occurred_on >= month.start && t.occurred_on <= month.end),
-    [month.end, month.start, transactions],
+    () => transactionsInMonth(transactions, currentKey),
+    [currentKey, transactions],
   );
   const income = monthTx.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
   const sharedExpense = monthTx

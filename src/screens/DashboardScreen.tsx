@@ -10,6 +10,7 @@ import {
   previousMonthKey,
   shiftMonth,
 } from "../lib/format";
+import { transactionsInMonth } from "../lib/bills";
 import { computeCushion, isPersonalExpense } from "../lib/cushion";
 import type { TxCategory } from "../types";
 
@@ -21,12 +22,12 @@ export function DashboardScreen() {
   const prev = parseMonthKey(prevKey);
 
   const currentTx = useMemo(
-    () => transactions.filter((t) => t.occurred_on >= current.start && t.occurred_on <= current.end),
-    [current.end, current.start, transactions],
+    () => transactionsInMonth(transactions, selected),
+    [selected, transactions],
   );
   const prevTx = useMemo(
-    () => transactions.filter((t) => t.occurred_on >= prev.start && t.occurred_on <= prev.end),
-    [prev.end, prev.start, transactions],
+    () => transactionsInMonth(transactions, prevKey),
+    [prevKey, transactions],
   );
 
   const income = sumBy(currentTx, "income");

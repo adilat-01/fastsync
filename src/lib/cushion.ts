@@ -1,4 +1,4 @@
-import { parseBillDescription } from "./bills";
+import { LEGACY_ELECTRICITY_GROUP, parseBillDescription } from "./bills";
 import { monthKey } from "./format";
 import type { Transaction } from "../types";
 
@@ -23,6 +23,7 @@ export function computeCushion(
   const since = new Date(openingSetAt).getTime();
   let delta = 0;
   for (const t of transactions) {
+    if (t.description.includes(`§${LEGACY_ELECTRICITY_GROUP}`)) continue;
     if (isRetroactiveBillShare(t)) continue;
     if (new Date(t.created_at).getTime() <= since) continue;
     if (t.type === "income") {

@@ -23,6 +23,7 @@ import {
   LEGACY_ELECTRICITY_GROUP,
   legacyElectricityDateFixes,
   occurredOnForSingleMonth,
+  octoberElectricityLeftoverIds,
   planLegacyElectricityRepair,
 } from "./lib/bills";
 
@@ -86,7 +87,8 @@ let repairTask: Promise<void> | null = null;
 async function applyLegacyElectricityRepair(txs: Transaction[], userId: string): Promise<boolean> {
   const plan = planLegacyElectricityRepair(txs);
   const fixes = legacyElectricityDateFixes(txs);
-  if ((!plan && fixes.length === 0) || !supabase) return false;
+  const leftoverIds = octoberElectricityLeftoverIds(txs);
+  if ((!plan && fixes.length === 0 && leftoverIds.length === 0) || !supabase) return false;
   if (repairTask) {
     await repairTask;
     return true;
@@ -119,8 +121,9 @@ async function applyLegacyElectricityRepair(txs: Transaction[], userId: string):
       }
     }
 
-    if (plan) {
-      const { error: deleteError } = await supabase.from("transactions").delete().eq("id", plan.deleteId);
+    const deleteIds = [...new Set([...(plan ? [plan.deleteId] : []), ...leftoverIds])];
+    if (deleteIds.length > 0) {
+      const { error: deleteError } = await supabase.from("transactions").delete().in("id", deleteIds);
       if (deleteError) throw deleteError;
     }
 

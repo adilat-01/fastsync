@@ -161,6 +161,41 @@ export function findLegacyElectricity(txs: Transaction[]): Transaction | null {
   return pool.length === 1 ? pool[0] : null;
 }
 
+export function txMonth(t: Transaction, all: Transaction[]): string {
+  if (!t.description.includes(`§${LEGACY_ELECTRICITY_GROUP}`)) return t.occurred_on.slice(0, 7);
+  const dated = t.occurred_on.slice(0, 7);
+  if (LEGACY_ELECTRICITY_MONTHS.includes(dated)) return dated;
+  if (Math.abs(Number(t.amount) - 284) < 0.05) return LEGACY_ELECTRICITY_MONTHS[0];
+  const shares = all
+    .filter(
+      (row) =>
+        row.description.includes(`§${LEGACY_ELECTRICITY_GROUP}`) && Math.abs(Number(row.amount) - 283) < 0.05,
+    )
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const index = shares.findIndex((row) => row.id === t.id);
+  if (index === 0) return LEGACY_ELECTRICITY_MONTHS[1];
+  if (index === 1) return LEGACY_ELECTRICITY_MONTHS[2];
+  return dated;
+}
+
+export function transactionsInMonth(txs: Transaction[], month: string): Transaction[] {
+  return txs.filter((t) => txMonth(t, txs) === month);
+}
+
+export function octoberElectricityLeftoverIds(txs: Transaction[]): string[] {
+  const cutoff = new Date("2026-10-14T00:00:00+03:00").getTime();
+  return txs
+    .filter((t) => {
+      if (t.type !== "expense" || t.recurring_template_id) return false;
+      if (t.description.includes(`§${LEGACY_ELECTRICITY_GROUP}`)) return false;
+      if (!t.occurred_on.startsWith("2026-10")) return false;
+      if (Math.abs(Number(t.amount) - 850) >= 0.05) return false;
+      if (!t.description.includes("חשמל")) return false;
+      return new Date(t.created_at).getTime() < cutoff;
+    })
+    .map((t) => t.id);
+}
+
 export function legacyElectricityDateFixes(txs: Transaction[]): { id: string; occurred_on: string }[] {
   const parts = txs.filter((t) => t.description.includes(`§${LEGACY_ELECTRICITY_GROUP}`));
   if (parts.length === 0) return [];
