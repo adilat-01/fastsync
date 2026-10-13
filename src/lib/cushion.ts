@@ -1,7 +1,17 @@
+import { parseBillDescription } from "./bills";
+import { monthKey } from "./format";
 import type { Transaction } from "../types";
 
 export function isPersonalExpense(t: Transaction): boolean {
   return t.type === "expense" && t.paid_from === "personal";
+}
+
+/** A bill share dated in an earlier month than it was entered is history, not cash leaving now. */
+export function isRetroactiveBillShare(t: Transaction): boolean {
+  if (t.type !== "expense" || !parseBillDescription(t.description)) return false;
+  const occurredMonth = t.occurred_on.slice(0, 7);
+  const createdMonth = monthKey(new Date(t.created_at));
+  return occurredMonth < createdMonth;
 }
 
 export function computeCushion(
@@ -13,6 +23,7 @@ export function computeCushion(
   const since = new Date(openingSetAt).getTime();
   let delta = 0;
   for (const t of transactions) {
+    if (isRetroactiveBillShare(t)) continue;
     if (new Date(t.created_at).getTime() <= since) continue;
     if (t.type === "income") {
       delta += Number(t.amount);

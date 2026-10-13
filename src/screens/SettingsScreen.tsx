@@ -203,7 +203,8 @@ function CushionCard({
       <h2 className="text-sm font-bold text-ink">כרית חיסכון · יתרת עו״ש</h2>
       <p className="mt-1 text-xs leading-relaxed text-stone-500">
         כמה יש בחשבון המשותף עכשיו לפי הבנק. מגדירים פעם אחת (או כשרוצים ליישר מול הבנק). מכאן כל הכנסה —
-        כולל חד-פעמית — מעלה, וכל הוצאה מהקופה מורידה. הוצאה מחשבון אישי לא משנה את המספר הזה.
+        כולל חד-פעמית — מעלה, וכל הוצאה מהקופה מורידה. הוצאה מחשבון אישי לא משנה את המספר הזה. חלק של
+        חשבון ששייך לחודש קודם לא מוריד את היתרה שוב.
       </p>
       {currentCushion != null && (
         <p className="mt-3 text-lg font-extrabold tabular-nums text-accent">{formatMoney(currentCushion)}</p>

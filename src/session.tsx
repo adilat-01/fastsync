@@ -21,6 +21,7 @@ import { monthKey, parseMonthKey, todayISO } from "./lib/format";
 import {
   buildSpreadRows,
   LEGACY_ELECTRICITY_GROUP,
+  legacyElectricityDateFixes,
   occurredOnForSingleMonth,
   planLegacyElectricityRepair,
 } from "./lib/bills";
@@ -84,7 +85,8 @@ let repairTask: Promise<void> | null = null;
 
 async function applyLegacyElectricityRepair(txs: Transaction[], userId: string): Promise<boolean> {
   const plan = planLegacyElectricityRepair(txs);
-  if (!plan || !supabase) return false;
+  const fixes = legacyElectricityDateFixes(txs);
+  if ((!plan && fixes.length === 0) || !supabase) return false;
   if (repairTask) {
     await repairTask;
     return true;
@@ -92,7 +94,7 @@ async function applyLegacyElectricityRepair(txs: Transaction[], userId: string):
 
   const run = async () => {
     if (!supabase) return;
-    if (plan.parts) {
+    if (plan?.parts) {
       const { data: existing, error: existingError } = await supabase
         .from("transactions")
         .select("id")
@@ -117,8 +119,18 @@ async function applyLegacyElectricityRepair(txs: Transaction[], userId: string):
       }
     }
 
-    const { error: deleteError } = await supabase.from("transactions").delete().eq("id", plan.deleteId);
-    if (deleteError) throw deleteError;
+    if (plan) {
+      const { error: deleteError } = await supabase.from("transactions").delete().eq("id", plan.deleteId);
+      if (deleteError) throw deleteError;
+    }
+
+    for (const fix of fixes) {
+      const { error: updateError } = await supabase
+        .from("transactions")
+        .update({ occurred_on: fix.occurred_on })
+        .eq("id", fix.id);
+      if (updateError) throw updateError;
+    }
   };
 
   repairTask = run().finally(() => {

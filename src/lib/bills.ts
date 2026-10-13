@@ -161,6 +161,31 @@ export function findLegacyElectricity(txs: Transaction[]): Transaction | null {
   return pool.length === 1 ? pool[0] : null;
 }
 
+export function legacyElectricityDateFixes(txs: Transaction[]): { id: string; occurred_on: string }[] {
+  const parts = txs.filter((t) => t.description.includes(`§${LEGACY_ELECTRICITY_GROUP}`));
+  if (parts.length === 0) return [];
+  const targets = buildSpreadRows({
+    description: "חשמל",
+    amount: 850,
+    months: LEGACY_ELECTRICITY_MONTHS,
+    groupId: LEGACY_ELECTRICITY_GROUP,
+  });
+  const used = new Set<string>();
+  const fixes: { id: string; occurred_on: string }[] = [];
+  for (const target of targets) {
+    const sameAmount = (t: Transaction) => Math.abs(Number(t.amount) - target.amount) < 0.05;
+    const match =
+      parts.find((t) => !used.has(t.id) && sameAmount(t) && t.occurred_on.slice(0, 10) === target.occurred_on) ??
+      parts.find((t) => !used.has(t.id) && sameAmount(t));
+    if (!match) continue;
+    used.add(match.id);
+    if (match.occurred_on.slice(0, 10) !== target.occurred_on) {
+      fixes.push({ id: match.id, occurred_on: target.occurred_on });
+    }
+  }
+  return fixes;
+}
+
 export function planLegacyElectricityRepair(txs: Transaction[]): {
   deleteId: string;
   parts: SpreadPart[] | null;
